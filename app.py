@@ -5,107 +5,153 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import pytz
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Math Relax AI", page_icon="🧘", layout="centered")
+# --- 1. KONFIGURASI TAMPILAN (UI) ---
+st.set_page_config(
+    page_title="Math Relax AI",
+    page_icon="🧘",
+    layout="centered",
+    initial_sidebar_state="expanded"
+)
 
-# --- KONEKSI KE GOOGLE SHEETS & GEMINI ---
-# Cek apakah secrets sudah ada
-if "gcp_service_account" in st.secrets and "GEMINI_API_KEY" in st.secrets:
-    # 1. Setup Gemini AI
+# Custom CSS agar tampilan lebih bersih untuk anak SD
+st.markdown("""
+    <style>
+    .stChatMessage {border-radius: 15px; padding: 10px;}
+    .stTextInput > div > div > input {border-radius: 20px;}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 2. FUNGSI KONEKSI DATABASE & AI ---
+def init_connections():
+    # Cek Secrets
+    if "gcp_service_account" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
+        st.error("⚠️ Konfigurasi Secrets belum lengkap. Mohon cek dashboard Streamlit.")
+        st.stop()
+    
+    # Setup Gemini
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # 2. Setup Google Sheets
-    # Membuat objek credentials dari secrets Streamlit
+    # Setup Google Sheets
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
     client = gspread.authorize(creds)
     
-    # Buka Sheet (Pastikan nama file di Google Drive SAMA PERSIS dengan ini)
-    SHEET_NAME = "Database_Math_Relax" 
+    # Buka Sheet (Nama File harus: Database_Math_Relax)
     try:
-        sheet = client.open(SHEET_NAME).sheet1
+        return client.open("Database_Math_Relax").sheet1
     except:
-        st.error(f"Gagal menemukan Google Sheet dengan nama '{SHEET_NAME}'. Pastikan nama file benar dan sudah dibagikan ke email Service Account.")
-        st.stop()
-else:
-    st.error("Secrets belum dikonfigurasi. Mohon cek Streamlit Cloud Dashboard.")
-    st.stop()
+        st.warning("⚠️ Belum terhubung ke Google Sheet. Chat bot tetap jalan, tapi data tidak tersimpan otomatis.")
+        return None
 
-# --- FUNGSI MENYIMPAN DATA ---
-def save_to_sheet(nama, user_input, ai_response):
-    # Waktu WIB
-    tz = pytz.timezone('Asia/Jakarta')
-    waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Tambah baris baru ke sheet
-    # Format: [Waktu, Nama, Input Siswa, Respon AI]
-    sheet.append_row([waktu, nama, user_input, ai_response])
+sheet = init_connections()
 
-# --- UI APLIKASI ---
-st.title("🧘 Math Relax AI")
+# --- 3. FUNGSI SIMPAN DATA (LOGGING) ---
+def save_log(nama, pesan_siswa, respon_ai):
+    if sheet:
+        try:
+            tz = pytz.timezone('Asia/Jakarta')
+            waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+            sheet.append_row([waktu, nama, pesan_siswa, respon_ai])
+        except Exception as e:
+            print(f"Gagal simpan log: {e}")
 
-# Identitas Siswa (Penting untuk Data Penelitian)
-if "user_name" not in st.session_state:
-    st.session_state.user_name = ""
+# --- 4. TAMPILAN UTAMA (FRONTEND) ---
 
-if st.session_state.user_name == "":
-    st.info("Halo! Sebelum mulai, tulis nama panggilanmu dulu ya 👇")
-    nama_input = st.text_input("Nama Kamu:", placeholder="Misal: Budi")
-    if st.button("Mulai Belajar"):
-        if nama_input:
-            st.session_state.user_name = nama_input
-            st.rerun() # Refresh halaman
-else:
-    st.write(f"Halo, **{st.session_state.user_name}**! Semangat belajar Pecahannya ya! 🌱")
-    
-    # System Instruction (Otak AI)
-    system_instruction = """
-    Kamu adalah 'Math Relax AI', teman belajar matematika siswa SD Fase C.
-    Fokus materi: Pecahan.
-    Gaya bahasa: Ramah, suportif, menggunakan Emoji, dan Scaffolding (bertahap).
-    JANGAN memberi jawaban langsung. Validasi emosi siswa jika mereka merasa sulit.
-    Gunakan format LaTeX untuk rumus matematika.
-    """
-    model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_instruction)
-
-    # Inisialisasi Chat History
-    if "messages" not in st.session_state:
+# Sidebar (Menu Samping)
+with st.sidebar:
+    st.image("https://img.icons8.com/fluency/96/meditation-guru.png", width=80)
+    st.title("Panduan Siswa")
+    st.info("""
+    1. **Tulis Namamu** di kolom yang tersedia.
+    2. **Ceritakan** kesulitanmu atau **ketik soal** pecahanmu.
+    3. **Math Relax AI** akan membantumu pelan-pelan.
+    4. Jangan takut salah ya! 😊
+    """)
+    if st.button("🔄 Mulai Percakapan Baru"):
         st.session_state.messages = []
+        st.rerun()
 
-    # Tampilkan Chat
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+st.title("🧘 Math Relax AI")
+st.caption("Teman Belajar Matematika yang Menenangkan Hati")
 
-    # Input Chat
-    if prompt := st.chat_input("Tulis soal atau curhatmu di sini..."):
-        # Tampilkan pesan user
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
+# --- 5. LOGIC APLIKASI ---
 
-        # Generate Jawaban AI
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            
-            chat = model.start_chat(history=[{"role": m["role"], "parts": [m["content"]]} for m in st.session_state.messages])
+# A. Input Nama Siswa
+if "user_name" not in st.session_state or st.session_state.user_name == "":
+    st.markdown("### 👋 Halo! Kenalan dulu yuk.")
+    nama_input = st.text_input("Tulis nama panggilanmu di sini:", placeholder="Contoh: Budi")
+    if st.button("Masuk Kelas"):
+        if nama_input.strip():
+            st.session_state.user_name = nama_input.strip()
+            st.rerun()
+    st.stop() # Berhenti di sini sampai nama diisi
+
+# B. Sapaan Personal
+st.success(f"Selamat datang, **{st.session_state.user_name}**! Silakan tanya apa saja tentang Pecahan.")
+
+# C. Otak AI (System Prompt - Kunci Tesis)
+system_instruction = f"""
+Kamu adalah 'Math Relax AI', asisten belajar matematika yang sabar dan empatik untuk siswa SD Fase C.
+Nama siswa saat ini adalah: {st.session_state.user_name}.
+
+Tugas Utamamu:
+1. Mereduksi kecemasan (Math Anxiety) dengan kalimat menenangkan.
+2. Mengajarkan materi PECAHAN (tambah, kurang, kali, bagi).
+
+Aturan Menjawab:
+- Panggil siswa dengan namanya ({st.session_state.user_name}) sesekali agar akrab.
+- Jika siswa bertanya soal (misal: 1/2 + 1/4), JANGAN langsung beri jawaban akhir.
+- Tuntun langkah demi langkah (Scaffolding). Tanya dulu: "Kira-kira penyebutnya sudah sama belum?"
+- Gunakan format LaTeX untuk pecahan ($ \\frac{{a}}{{b}} $).
+- Berikan pujian jika siswa berhasil atau berusaha.
+"""
+
+model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_instruction)
+
+# D. Menampilkan Chat History
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    # Sapaan awal otomatis dari AI
+    welcome_msg = f"Halo {st.session_state.user_name}! Apa yang bikin kamu bingung soal pecahan hari ini? Cerita aja ya..."
+    st.session_state.messages.append({"role": "model", "content": welcome_msg})
+
+for message in st.session_state.messages:
+    role = "user" if message["role"] == "user" else "assistant"
+    avatar = "🧑‍🎓" if role == "user" else "🤖"
+    with st.chat_message(role, avatar=avatar):
+        st.markdown(message["content"])
+
+# E. Input & Respon
+if prompt := st.chat_input("Ketik di sini..."):
+    # 1. Tampilkan pesan siswa
+    with st.chat_message("user", avatar="🧑‍🎓"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # 2. Proses AI
+    with st.chat_message("assistant", avatar="🤖"):
+        msg_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            # Kirim history agar nyambung
+            chat = model.start_chat(history=[
+                {"role": m["role"], "parts": [m["content"]]} for m in st.session_state.messages if m["role"] != "system"
+            ])
             response = chat.send_message(prompt, stream=True)
             
             for chunk in response:
                 if chunk.text:
                     full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
+                    msg_placeholder.markdown(full_response + "▌")
+            msg_placeholder.markdown(full_response)
             
-            message_placeholder.markdown(full_response)
-        
-        # Simpan ke Session State
-        st.session_state.messages.append({"role": "model", "content": full_response})
-        
-        # --- AUTO SAVE KE GOOGLE SHEETS ---
-        try:
-            save_to_sheet(st.session_state.user_name, prompt, full_response)
-            # Opsional: Beri tanda kecil bahwa data tersimpan (bisa dihilangkan agar tidak mengganggu)
-            # st.toast("Chat tersimpan otomatis ✅") 
+            # 3. Simpan ke Log Google Sheets (Background Process)
+            save_log(st.session_state.user_name, prompt, full_response)
+            
         except Exception as e:
-            print(f"Gagal menyimpan ke database: {e}")
+            st.error("Waduh, koneksi internet agak gangguan. Coba kirim lagi ya!")
+            full_response = "Maaf, error koneksi."
+
+    # 4. Simpan ke Session State
+    st.session_state.messages.append({"role": "model", "content": full_response})
