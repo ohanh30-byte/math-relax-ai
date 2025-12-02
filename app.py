@@ -5,153 +5,134 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import pytz
 
-# --- 1. KONFIGURASI TAMPILAN (UI) ---
+# --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="Math Relax AI",
     page_icon="🧘",
-    layout="centered",
-    initial_sidebar_state="expanded"
+    layout="centered"
 )
 
-# Custom CSS agar tampilan lebih bersih untuk anak SD
-st.markdown("""
-    <style>
-    .stChatMessage {border-radius: 15px; padding: 10px;}
-    .stTextInput > div > div > input {border-radius: 20px;}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- 2. FUNGSI KONEKSI DATABASE & AI ---
+# --- 2. KONEKSI GOOGLE SHEETS & AI ---
 def init_connections():
-    # Cek Secrets
+    # Cek apakah secrets ada
     if "gcp_service_account" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
-        st.error("⚠️ Konfigurasi Secrets belum lengkap. Mohon cek dashboard Streamlit.")
-        st.stop()
-    
-    # Setup Gemini
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    
+        st.error("⚠️ Error: Secrets belum lengkap. Cek pengaturan Streamlit.")
+        return None, None
+
     # Setup Google Sheets
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
-    client = gspread.authorize(creds)
-    
-    # Buka Sheet (Nama File harus: Database_Math_Relax)
     try:
-        return client.open("Database_Math_Relax").sheet1
-    except:
-        st.warning("⚠️ Belum terhubung ke Google Sheet. Chat bot tetap jalan, tapi data tidak tersimpan otomatis.")
-        return None
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("Database_Math_Relax").sheet1
+    except Exception as e:
+        # Jika sheet error, kita abaikan dulu agar aplikasi tetap jalan
+        sheet = None
 
-sheet = init_connections()
+    # Setup Gemini AI
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        # KITA PAKAI MODEL YANG PALING AMAN: GEMINI-1.5-FLASH
+        # Perhatikan: Kita TIDAK memasukkan system_instruction di sini agar tidak error 404
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Error AI: {e}")
+        return None, None
 
-# --- 3. FUNGSI SIMPAN DATA (LOGGING) ---
-def save_log(nama, pesan_siswa, respon_ai):
+    return sheet, model
+
+sheet, model = init_connections()
+
+# --- 3. FUNGSI LOGGING (Simpan ke Excel) ---
+def save_log(nama, pesan, respon):
     if sheet:
         try:
             tz = pytz.timezone('Asia/Jakarta')
             waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-            sheet.append_row([waktu, nama, pesan_siswa, respon_ai])
-        except Exception as e:
-            print(f"Gagal simpan log: {e}")
+            sheet.append_row([waktu, nama, pesan, respon])
+        except:
+            pass # Diam saja kalau gagal simpan, jangan bikin panik user
 
-# --- 4. TAMPILAN UTAMA (FRONTEND) ---
-
-# Sidebar (Menu Samping)
-with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/meditation-guru.png", width=80)
-    st.title("Panduan Siswa")
-    st.info("""
-    1. **Tulis Namamu** di kolom yang tersedia.
-    2. **Ceritakan** kesulitanmu atau **ketik soal** pecahanmu.
-    3. **Math Relax AI** akan membantumu pelan-pelan.
-    4. Jangan takut salah ya! 😊
-    """)
-    if st.button("🔄 Mulai Percakapan Baru"):
-        st.session_state.messages = []
-        st.rerun()
-
+# --- 4. TAMPILAN & LOGIKA UTAMA ---
 st.title("🧘 Math Relax AI")
-st.caption("Teman Belajar Matematika yang Menenangkan Hati")
+st.caption("Teman Belajar Matematika SD Fase C")
 
-# --- 5. LOGIC APLIKASI ---
+# Input Nama
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
 
-# A. Input Nama Siswa
-if "user_name" not in st.session_state or st.session_state.user_name == "":
-    st.markdown("### 👋 Halo! Kenalan dulu yuk.")
-    nama_input = st.text_input("Tulis nama panggilanmu di sini:", placeholder="Contoh: Budi")
-    if st.button("Masuk Kelas"):
-        if nama_input.strip():
-            st.session_state.user_name = nama_input.strip()
+if not st.session_state.user_name:
+    nama = st.text_input("Tulis nama panggilanmu:", placeholder="Contoh: Budi")
+    if st.button("Mulai"):
+        if nama:
+            st.session_state.user_name = nama
             st.rerun()
-    st.stop() # Berhenti di sini sampai nama diisi
+    st.stop()
 
-# B. Sapaan Personal
-st.success(f"Selamat datang, **{st.session_state.user_name}**! Silakan tanya apa saja tentang Pecahan.")
+st.success(f"Halo, **{st.session_state.user_name}**! Yuk cerita kesulitanmu.")
 
-# C. Otak AI (System Prompt - Kunci Tesis)
-system_instruction = f"""
-Kamu adalah 'Math Relax AI', asisten belajar matematika yang sabar dan empatik untuk siswa SD Fase C.
-Nama siswa saat ini adalah: {st.session_state.user_name}.
-
-Tugas Utamamu:
-1. Mereduksi kecemasan (Math Anxiety) dengan kalimat menenangkan.
-2. Mengajarkan materi PECAHAN (tambah, kurang, kali, bagi).
-
-Aturan Menjawab:
-- Panggil siswa dengan namanya ({st.session_state.user_name}) sesekali agar akrab.
-- Jika siswa bertanya soal (misal: 1/2 + 1/4), JANGAN langsung beri jawaban akhir.
-- Tuntun langkah demi langkah (Scaffolding). Tanya dulu: "Kira-kira penyebutnya sudah sama belum?"
-- Gunakan format LaTeX untuk pecahan ($ \\frac{{a}}{{b}} $).
-- Berikan pujian jika siswa berhasil atau berusaha.
-"""
-
-model = genai.GenerativeModel('gemini-pro', system_instruction=system_instruction)
-
-# D. Menampilkan Chat History
+# Inisialisasi Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Sapaan awal otomatis dari AI
-    welcome_msg = f"Halo {st.session_state.user_name}! Apa yang bikin kamu bingung soal pecahan hari ini? Cerita aja ya..."
-    st.session_state.messages.append({"role": "model", "content": welcome_msg})
 
-for message in st.session_state.messages:
-    role = "user" if message["role"] == "user" else "assistant"
-    avatar = "🧑‍🎓" if role == "user" else "🤖"
-    with st.chat_message(role, avatar=avatar):
-        st.markdown(message["content"])
+# Tampilkan Chat
+for msg in st.session_state.messages:
+    # Avatar: Siswa (👤) vs AI (🤖)
+    icon = "👤" if msg["role"] == "user" else "🤖"
+    with st.chat_message(msg["role"], avatar=icon):
+        st.markdown(msg["content"])
 
-# E. Input & Respon
+# Input Pesan Baru
 if prompt := st.chat_input("Ketik di sini..."):
-    # 1. Tampilkan pesan siswa
-    with st.chat_message("user", avatar="🧑‍🎓"):
+    # 1. Tampilkan pesan user
+    with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 2. Proses AI
+    # 2. Proses Jawaban AI (METODE ANTI-ERROR 404)
     with st.chat_message("assistant", avatar="🤖"):
-        msg_placeholder = st.empty()
-        full_response = ""
+        msg_box = st.empty()
         
         try:
-            # Kirim history agar nyambung
-            chat = model.start_chat(history=[
-                {"role": m["role"], "parts": [m["content"]]} for m in st.session_state.messages if m["role"] != "system"
-            ])
-            response = chat.send_message(prompt, stream=True)
+            # --- RAHASIA JITU: KITA SELIPKAN INSTRUKSI DI SINI ---
+            # Kita buat "Sejarah Buatan" agar AI tahu tugasnya tanpa perlu settingan rumit
             
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    msg_placeholder.markdown(full_response + "▌")
-            msg_placeholder.markdown(full_response)
+            instruksi_guru = f"""
+            PERAN: Kamu adalah 'Math Relax AI', guru privat matematika untuk siswa SD bernama {st.session_state.user_name}.
+            TUGAS: Ajarkan Pecahan (Tambah, Kurang, Kali, Bagi).
+            SIFAT: Sabar, ramah, gunakan emoji, jangan kaku.
+            ATURAN: 
+            1. JANGAN langsung kasih jawaban. Pandu langkah demi langkah (scaffolding).
+            2. Validasi perasaan siswa (misal: "Tenang, jangan panik").
+            3. Gunakan LaTeX untuk pecahan.
+            """
             
-            # 3. Simpan ke Log Google Sheets (Background Process)
-            save_log(st.session_state.user_name, prompt, full_response)
+            # Kita susun chat history manual
+            history_ai = [
+                {"role": "user", "parts": [instruksi_guru]},
+                {"role": "model", "parts": ["Siap, saya mengerti. Saya akan menjadi guru yang ramah."]}
+            ]
+            
+            # Masukkan chat asli siswa
+            for m in st.session_state.messages:
+                # Ubah role 'user'/'assistant' jadi format Gemini
+                role_gemini = "user" if m["role"] == "user" else "model"
+                history_ai.append({"role": role_gemini, "parts": [m["content"]]})
+            
+            # Mulai Chat dengan History yang sudah dimanipulasi
+            chat = model.start_chat(history=history_ai[:-1]) # Ambil semua kecuali pesan terakhir
+            response = chat.send_message(prompt) # Kirim pesan terakhir
+            
+            full_text = response.text
+            msg_box.markdown(full_text)
+            
+            # Simpan ke memori tampilan
+            st.session_state.messages.append({"role": "assistant", "content": full_text})
+            
+            # Simpan ke Excel
+            save_log(st.session_state.user_name, prompt, full_text)
             
         except Exception as e:
-            st.error(f"TERJADI ERROR: {e}") # Ini akan memberitahu kita masalahnya
-            full_response = "Maaf, error koneksi."
-
-    # 4. Simpan ke Session State
-    st.session_state.messages.append({"role": "model", "content": full_response})
+            # Jika masih error, tampilkan pesan jelas
+            st.error(f"Maaf, ada gangguan teknis: {e}")
+            st.session_state.messages.append({"role": "assistant", "content": "Maaf, coba tanya lagi ya."})
