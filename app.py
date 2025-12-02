@@ -1,96 +1,75 @@
 import streamlit as st
 import google.generativeai as genai
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
-import pytz
+import sys
 
-# --- KONFIGURASI ---
-st.set_page_config(page_title="Math Relax AI", page_icon="🧘")
+st.set_page_config(page_title="Dokter Diagnosa", page_icon="👨‍⚕️")
 
-# --- KONEKSI ---
-def init():
-    # 1. Cek Kunci
-    if "GEMINI_API_KEY" not in st.secrets:
-        st.error("Kunci AI belum dipasang di Secrets.")
-        return None, None
+st.title("👨‍⚕️ Cek Diagnosa Math Relax AI")
+st.write("Sedang memeriksa sistem Pak Ohan...")
+
+# 1. CEK VERSI ALAT (Library)
+st.divider()
+st.subheader("1. Cek Versi Alat")
+st.write(f"Versi Python: `{sys.version}`")
+try:
+    ver = genai.__version__
+    st.write(f"Versi Google AI Library: **{ver}**")
+    # Versi minimal harus 0.7.0 ke atas
+except:
+    st.error("Library Google AI rusak/tidak terbaca.")
+
+# 2. CEK KUNCI RAHASIA
+st.divider()
+st.subheader("2. Cek Kunci (Secrets)")
+api_key = st.secrets.get("GEMINI_API_KEY")
+
+if not api_key:
+    st.error("❌ Kunci 'GEMINI_API_KEY' TIDAK DITEMUKAN di Secrets!")
+    st.stop()
+else:
+    # Tampilkan 5 huruf depan saja untuk memastikan bukan kosong
+    st.success(f"✅ Kunci ditemukan. Depan: `{api_key[:5]}...`")
     
-    # 2. Setup AI (Dengan Auto-Detect Model)
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # Cek apakah ada spasi yang tidak sengaja terbawa
+    if " " in api_key:
+        st.warning("⚠️ Hati-hati! Sepertinya ada SPASI di dalam kunci Bapak. Cek Secrets lagi.")
+
+# 3. CEK KONEKSI KE GOOGLE (Momen Penentuan)
+st.divider()
+st.subheader("3. Tes Koneksi ke Server Google")
+
+genai.configure(api_key=api_key)
+
+try:
+    st.info("Mencoba mengetuk pintu server Google...")
+    # Kita coba minta daftar model yang tersedia
+    list_model = genai.list_models()
     
-    # TRIK JITU: Coba model satu per satu sampai ketemu yang bisa
-    daftar_model = ['gemini-pro', 'gemini-1.5-flash', 'gemini-1.5-pro']
-    model_aktif = None
+    found_models = []
+    for m in list_model:
+        # Cari model yang bisa generate text
+        if 'generateContent' in m.supported_generation_methods:
+            found_models.append(m.name)
     
-    for nama_model in daftar_model:
-        try:
-            m = genai.GenerativeModel(nama_model)
-            # Tes panggil sedikit
-            m.generate_content("Tes")
-            model_aktif = m
-            # st.toast(f"Tersambung ke otak: {nama_model}") # Debug info
-            break
-        except:
-            continue
-            
-    if not model_aktif:
-        st.error("Gagal menemukan model AI yang cocok. Coba buat API Key baru di Google AI Studio.")
-        return None, None
+    if found_models:
+        st.success("🎉 ALHAMDULILLAH! KONEKSI BERHASIL!")
+        st.write("Model yang tersedia untuk akun Bapak:")
+        st.code(found_models)
+        st.write("---")
+        st.write("**Kesimpulan:** Akun Bapak SEHAT. Masalah sebelumnya ada di kode pemanggil model.")
+    else:
+        st.warning("Koneksi berhasil, tapi Google bilang TIDAK ADA model yang boleh Bapak pakai. (Biasanya karena akun Kampus/Region)")
 
-    # 3. Setup Excel
-    try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("Database_Math_Relax").sheet1
-    except:
-        sheet = None
-
-    return sheet, model_aktif
-
-sheet, model = init()
-
-# --- LOGIKA CHAT ---
-st.title("🧘 Math Relax AI")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Tampilkan Chat
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# Input Chat
-if prompt := st.chat_input("Ceritakan masalah matematikamu..."):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("assistant"):
-        if model:
-            try:
-                # Instruksi Guru (Manual di belakang layar)
-                prompt_guru = f"""
-                Bertindaklah sebagai guru SD yang ramah.
-                Nama siswa: Teman.
-                Tugas: Ajarkan pecahan dengan sabar. Jangan langsung beri jawaban.
-                Pertanyaan siswa: {prompt}
-                """
-                
-                response = model.generate_content(prompt_guru)
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "model", "content": response.text})
-                
-                # Simpan ke Excel
-                if sheet:
-                    try:
-                        tz = pytz.timezone('Asia/Jakarta')
-                        waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-                        sheet.append_row([waktu, "Siswa", prompt, response.text])
-                    except:
-                        pass
-            except Exception as e:
-                st.error(f"Error: {e}")
-        else:
-            st.error("AI sedang istirahat. Refresh halaman.")
+except Exception as e:
+    st.error("❌ GAGAL TERHUBUNG (CRITICAL ERROR)")
+    st.markdown(f"**Pesan Error Asli dari Google:**")
+    st.code(f"{e}")
+    
+    # Analisa Error Sederhana
+    pesan_error = str(e)
+    if "403" in pesan_error or "API key not valid" in pesan_error:
+        st.write("👉 **Artinya:** Kunci Salah / Typo / Sudah dihapus.")
+    elif "404" in pesan_error:
+        st.write("👉 **Artinya:** Versi Library Lama atau Model tidak tersedia di akun ini.")
+    elif "User location is not supported" in pesan_error:
+        st.write("👉 **Artinya:** Lokasi/IP Bapak terblokir.")
