@@ -150,7 +150,7 @@ if prompt := st.chat_input("Ketik di sini..."):
             save_log(st.session_state.user_name, prompt, full_response)
             
         except Exception as e:
-            st.error("Waduh, koneksi internet agak gangguan. Coba kirim lagi ya!")
+            st.error(f"TERJADI ERROR: {e}") # Ini akan memberitahu kita masalahnya
             full_response = "Maaf, error koneksi."
 
     # 4. Simpan ke Session State
