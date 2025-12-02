@@ -106,7 +106,7 @@ Aturan Menjawab:
 - Berikan pujian jika siswa berhasil atau berusaha.
 """
 
-model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_instruction)
+model = genai.GenerativeModel('gemini-pro', system_instruction=system_instruction)
 
 # D. Menampilkan Chat History
 if "messages" not in st.session_state:
