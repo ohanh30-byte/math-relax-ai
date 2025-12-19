@@ -79,7 +79,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. KONEKSI KE GOOGLE (MODEL 2.5 SESUAI DIAGNOSA) ---
+# --- 3. KONEKSI KE GOOGLE (MODEL gemini-1.5-flash SESUAI DIAGNOSA) ---
 @st.cache_resource # Cache biar gak connect ulang terus
 def init_connections():
     # Cek Kunci
