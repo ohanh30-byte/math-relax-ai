@@ -6,61 +6,55 @@ from datetime import datetime
 import pytz
 
 # --- 1. SETUP HALAMAN (WIDE MODE) ---
-# Kita pakai mode 'wide' agar latar belakang berwarna bisa memenuhi layar
 st.set_page_config(
     page_title="Math Relax AI",
     page_icon="🧘",
-    layout="wide", # Layar lebar
+    layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # --- 2. CUSTOM CSS (TAMPILAN BARU) ---
 st.markdown("""
 <style>
-    /* A. LATAR BELAKANG KUNING GADING (SELURUH APLIKASI) */
+    /* A. LATAR BELAKANG KUNING GADING */
     .stApp {
-        background-color: #FDFD96; /* Warna Kuning Gading Cerah */
+        background-color: #FDFD96;
     }
 
     /* B. MENGATUR KOTAK CHAT UTAMA */
-    /* Di Laptop: Kotak ada di tengah dengan lebar terbatas */
     .block-container {
-        max-width: 900px; /* Lebar maksimal kotak chat di laptop */
+        max-width: 900px;
         padding-top: 2rem;
         padding-bottom: 5rem;
-        margin: auto; /* Posisi tengah */
+        margin: auto;
     }
 
     /* C. TAMPILAN KHUSUS HP (MOBILE RESPONSIVE) */
     @media (max-width: 768px) {
-        /* Di HP: Kotak chat memenuhi layar (Full Width) */
         .block-container {
             max-width: 100%;
             padding-left: 0.5rem;
             padding-right: 0.5rem;
             padding-top: 1rem;
         }
-        /* Font di HP sedikit lebih besar biar enak dibaca */
         .stMarkdown, .stChatMessageContent {
              font-size: 1.05rem !important;
         }
     }
 
     /* D. MEMPERCANTIK ELEMEN CHAT */
-    /* Judul Aplikasi */
     h1 {
         color: #4A4A4A;
         text-align: center;
         font-weight: 700;
     }
-    /* Keterangan di bawah judul */
     .stCaption {
         text-align: center;
         color: #666;
         font-size: 1rem;
     }
     
-    /* Warna Balon Chat (Biar kontras dengan background kuning) */
+    /* Warna Balon Chat */
     /* Siswa (Hijau Lembut) */
     .stChatMessage[data-testid="stChatMessage"]:nth-child(odd) {
         background-color: #E8F5E9;
@@ -74,22 +68,20 @@ st.markdown("""
         border-radius: 15px;
     }
 
-    /* Sembunyikan elemen pengganggu */
     #MainMenu, footer, header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. KONEKSI KE GOOGLE (MODEL gemini-1.5-flash SESUAI DIAGNOSA) ---
-@st.cache_resource # Cache biar gak connect ulang terus
+# --- 3. KONEKSI KE GOOGLE (SUDAH DIPERBAIKI KE 1.5-FLASH) ---
+@st.cache_resource
 def init_connections():
-    # Cek Kunci
     if "GEMINI_API_KEY" not in st.secrets:
-        return None, None, "Kunci API belum dipasang."
+        return None, None, "Kunci API belum dipasang di Secrets."
 
     # 1. Setup AI
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # MENGGUNAKAN MODEL 2.5 YANG TERSEDIA DI AKUN BAPAK
+        # PERBAIKAN: Menggunakan model standar yang stabil
         model = genai.GenerativeModel('gemini-1.5-flash')
     except Exception as e:
         return None, None, f"Error AI: {e}"
@@ -112,9 +104,8 @@ def init_connections():
 
 model, sheet, excel_err = init_connections()
 
-# Tampilkan error Excel jika ada (tapi aplikasi tetap jalan)
 if excel_err and "messages" not in st.session_state:
-     st.toast(f"⚠️ Info Database: {excel_err}", icon="Info Database")
+     st.toast(f"⚠️ Info Database: {excel_err}", icon="Info")
 
 # --- 4. FUNGSI SIMPAN DATA ---
 def simpan_log(nama, role, pesan):
@@ -124,55 +115,48 @@ def simpan_log(nama, role, pesan):
             waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
             sheet.append_row([waktu, nama, role, pesan])
         except:
-            pass # Diam saja kalau gagal
+            pass
 
-# --- 5. LOGIKA LOGIN (TAMPILAN AWAL) ---
+# --- 5. LOGIKA LOGIN ---
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
 
 if not st.session_state.user_name:
-    # Gunakan container untuk membuat kotak login di tengah
     with st.container(border=True):
         st.markdown("<h2 style='text-align: center;'>👋 Selamat Datang</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center;'>Masukkan nama panggilanmu untuk mulai belajar.</p>", unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 2, 1])
-        with col2: # Input di kolom tengah
+        with col2:
             nama_input = st.text_input("Nama Kamu:", placeholder="Contoh: Budi", label_visibility="collapsed")
-            st.markdown("<br>", unsafe_allow_html=True) # Spasi
+            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Mulai Belajar 🚀", use_container_width=True, type="primary"):
                 if nama_input.strip():
                     st.session_state.user_name = nama_input.strip()
                     st.rerun()
     st.stop()
 
-# --- 6. TAMPILAN CHAT UTAMA (SETELAH LOGIN) ---
-
-# KITA BUNGKUS SEMUA ISI CHAT DALAM SATU KOTAK PUTIH (CONTAINER)
+# --- 6. TAMPILAN CHAT UTAMA ---
 with st.container(border=True):
-    # Header Chat
     st.title("🧘 Math Relax AI")
     st.caption(f"Siswa: {st.session_state.user_name} | Materi: Pecahan SD Fase C")
-    st.divider() # Garis pemisah
+    st.divider()
 
-    # Sapaan Awal
     if "messages" not in st.session_state:
         st.session_state.messages = []
         sapaan = f"Halo **{st.session_state.user_name}**! 👋\n\nAku teman belajarmu. Jangan takut salah ya, di sini kita belajar Pecahan dengan santai. Kamu lagi bingung soal apa nih?"
         st.session_state.messages.append({"role": "model", "content": sapaan})
 
-    # Tampilkan History Chat
-    # Kita buat wadah scroll agar chat panjang tetap rapi di dalam kotak
     chat_container = st.container()
     with chat_container:
         for msg in st.session_state.messages:
             ikon = "🧑‍🎓" if msg["role"] == "user" else "🧘"
             with st.chat_message(msg["role"], avatar=ikon):
                 st.markdown(msg["content"])
-        st.markdown("<div id='link_scroll'></div>", unsafe_allow_html=True) # Marker untuk auto-scroll
+        st.markdown("<div id='link_scroll'></div>", unsafe_allow_html=True)
 
-    # --- 7. INPUT PESAN (DI BAGIAN BAWAH KOTAK) ---
-    st.markdown("<br>", unsafe_allow_html=True) # Beri jarak sedikit
+    # --- 7. INPUT PESAN & PROSES AI ---
+    st.markdown("<br>", unsafe_allow_html=True)
     if prompt := st.chat_input("Ketik soal atau curhatmu di sini..."):
         # Tampilkan Pesan Siswa
         with chat_container:
@@ -187,26 +171,27 @@ with st.container(border=True):
                 if model:
                     placeholder = st.empty()
                     try:
-                        # Instruksi Guru (System Prompt)
-chat_session = model.start_chat(history=[
-    {"role": "user", "parts": [
-        f"""
-        Berperanlah sebagai Guru SD yang ramah dan sabar.
-        Nama siswa: {st.session_state.user_name}.
-        Materi: PECAHAN (Matematika SD Fase C).
-        Metode: Scaffolding (berikan petunjuk bertahap, jangan langsung beri jawaban akhir).
-        
-        PENTING:
-        1. Panggil siswa dengan namanya sesekali.
-        2. Jika siswa bertanya soal matematika/pecahan, bimbing dia.
-        3. JIKA SISWA BERTANYA DI LUAR TOPIK MATEMATIKA (misal: game, film, curhat tidak jelas), TOLAK DENGAN HALUS dan ajak kembali belajar matematika.
-        Contoh tolak halus: "Wah seru tuh, tapi kita selesaikan dulu soal pecahan ini ya, Budi!"
-        """
-    ]},
-    {"role": "model", "parts": ["Siap, saya mengerti peran saya sebagai Guru Matematika."]}
-])
+                        # --- BAGIAN GUARDRAILS (PEMBATASAN TOPIK) ---
+                        instruksi_guru = f"""
+                        Berperanlah sebagai Guru SD yang ramah, sabar, dan empatik.
+                        Nama siswa: {st.session_state.user_name}.
+                        Materi: PECAHAN (Matematika SD Fase C).
+                        Metode: Scaffolding (berikan petunjuk bertahap, JANGAN berikan jawaban langsung).
                         
-                        # Masukkan history chat sebelumnya
+                        ATURAN PENTING:
+                        1. Panggil siswa dengan namanya sesekali agar akrab.
+                        2. Jika siswa bertanya soal matematika/pecahan, bimbing dia pelan-pelan.
+                        3. JIKA SISWA BERTANYA DI LUAR TOPIK MATEMATIKA (misal: game, film, hobi, curhat tidak jelas), 
+                           TOLAK DENGAN HALUS dan ajak kembali belajar matematika.
+                           Contoh tolak halus: "Wah seru tuh, tapi kita fokus selesaikan soal pecahan ini dulu yuk, {st.session_state.user_name}!"
+                        """
+                        
+                        chat_session = model.start_chat(history=[
+                            {"role": "user", "parts": [instruksi_guru]},
+                            {"role": "model", "parts": ["Siap, saya mengerti peran saya sebagai Guru Matematika yang empatik."]}
+                        ])
+                        
+                        # Masukkan history chat sebelumnya (context window)
                         for m in st.session_state.messages:
                             if m["role"] != "system":
                                 role_google = "user" if m["role"] == "user" else "model"
@@ -226,4 +211,4 @@ chat_session = model.start_chat(history=[
                     except Exception as e:
                         st.error(f"Maaf, koneksi terputus. Coba lagi ya. ({e})")
                 else:
-                    st.error("Sistem AI belum siap. Cek konfigurasi.")
+                    st.error("Sistem AI belum siap. Cek konfigurasi Secrets.")
