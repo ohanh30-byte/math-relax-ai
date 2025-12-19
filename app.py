@@ -90,7 +90,7 @@ def init_connections():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         # MENGGUNAKAN MODEL 2.5 YANG TERSEDIA DI AKUN BAPAK
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
     except Exception as e:
         return None, None, f"Error AI: {e}"
 
@@ -187,11 +187,24 @@ with st.container(border=True):
                 if model:
                     placeholder = st.empty()
                     try:
-                        # Instruksi Guru
-                        chat_session = model.start_chat(history=[
-                            {"role": "user", "parts": [f"Berperanlah sebagai Guru SD ramah. Nama siswa: {st.session_state.user_name}. Materi: PECAHAN. Metode: Scaffolding (bertahap). Jangan langsung beri jawaban akhir. Panggil siswa dengan namanya."]},
-                            {"role": "model", "parts": ["Siap, saya mengerti."]}
-                        ])
+                        # Instruksi Guru (System Prompt)
+chat_session = model.start_chat(history=[
+    {"role": "user", "parts": [
+        f"""
+        Berperanlah sebagai Guru SD yang ramah dan sabar.
+        Nama siswa: {st.session_state.user_name}.
+        Materi: PECAHAN (Matematika SD Fase C).
+        Metode: Scaffolding (berikan petunjuk bertahap, jangan langsung beri jawaban akhir).
+        
+        PENTING:
+        1. Panggil siswa dengan namanya sesekali.
+        2. Jika siswa bertanya soal matematika/pecahan, bimbing dia.
+        3. JIKA SISWA BERTANYA DI LUAR TOPIK MATEMATIKA (misal: game, film, curhat tidak jelas), TOLAK DENGAN HALUS dan ajak kembali belajar matematika.
+        Contoh tolak halus: "Wah seru tuh, tapi kita selesaikan dulu soal pecahan ini ya, Budi!"
+        """
+    ]},
+    {"role": "model", "parts": ["Siap, saya mengerti peran saya sebagai Guru Matematika."]}
+])
                         
                         # Masukkan history chat sebelumnya
                         for m in st.session_state.messages:
