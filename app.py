@@ -1,214 +1,164 @@
 import streamlit as st
-import google.generativeai as genai
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
-import pytz
+from google import genai
+import time
+import os
+from gtts import gTTS
+from io import BytesIO
+import base64
 
-# --- 1. SETUP HALAMAN (WIDE MODE) ---
+# --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="Math Relax AI",
-    page_icon="🧘",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_icon="🧩",
+    layout="centered"
 )
 
-# --- 2. CUSTOM CSS (TAMPILAN BARU) ---
-st.markdown("""
-<style>
-    /* A. LATAR BELAKANG KUNING GADING */
-    .stApp {
-        background-color: #FDFD96;
-    }
-
-    /* B. MENGATUR KOTAK CHAT UTAMA */
-    .block-container {
-        max-width: 900px;
-        padding-top: 2rem;
-        padding-bottom: 5rem;
-        margin: auto;
-    }
-
-    /* C. TAMPILAN KHUSUS HP (MOBILE RESPONSIVE) */
-    @media (max-width: 768px) {
-        .block-container {
-            max-width: 100%;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
-            padding-top: 1rem;
-        }
-        .stMarkdown, .stChatMessageContent {
-             font-size: 1.05rem !important;
-        }
-    }
-
-    /* D. MEMPERCANTIK ELEMEN CHAT */
-    h1 {
-        color: #4A4A4A;
-        text-align: center;
-        font-weight: 700;
-    }
-    .stCaption {
-        text-align: center;
-        color: #666;
-        font-size: 1rem;
-    }
-    
-    /* Warna Balon Chat */
-    /* Siswa (Hijau Lembut) */
-    .stChatMessage[data-testid="stChatMessage"]:nth-child(odd) {
-        background-color: #E8F5E9;
-        border: 1px solid #C8E6C9;
-        border-radius: 15px;
-    }
-    /* AI (Putih Bersih) */
-    .stChatMessage[data-testid="stChatMessage"]:nth-child(even) {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        border-radius: 15px;
-    }
-
-    #MainMenu, footer, header {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
-
-# --- 3. KONEKSI KE GOOGLE (SUDAH DIPERBAIKI KE 1.5-FLASH) ---
-@st.cache_resource
-def init_connections():
-    if "GEMINI_API_KEY" not in st.secrets:
-        return None, None, "Kunci API belum dipasang di Secrets."
-
-    # 1. Setup AI
+# --- 2. FUNGSI SUARA OTOMATIS (AUTOPLAY) ---
+def text_to_speech_autoplay(text):
+    """Mengubah teks jadi suara dan memutarnya otomatis"""
     try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # PERBAIKAN: Menggunakan model standar yang stabil
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        return None, None, f"Error AI: {e}"
-
-    # 2. Setup Excel
-    sheet = None
-    err_msg = None
-    try:
-        if "gcp_service_account" in st.secrets:
-            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
-            client = gspread.authorize(creds)
-            sheet = client.open("Database_Math_Relax").sheet1
-        else:
-            err_msg = "Kunci Excel (Service Account) belum dipasang."
-    except Exception as e:
-        err_msg = f"Gagal konek Excel: {e}"
-
-    return model, sheet, err_msg
-
-model, sheet, excel_err = init_connections()
-
-if excel_err and "messages" not in st.session_state:
-     st.toast(f"⚠️ Info Database: {excel_err}", icon="Info")
-
-# --- 4. FUNGSI SIMPAN DATA ---
-def simpan_log(nama, role, pesan):
-    if sheet:
-        try:
-            tz = pytz.timezone('Asia/Jakarta')
-            waktu = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-            sheet.append_row([waktu, nama, role, pesan])
-        except:
-            pass
-
-# --- 5. LOGIKA LOGIN ---
-if "user_name" not in st.session_state:
-    st.session_state.user_name = ""
-
-if not st.session_state.user_name:
-    with st.container(border=True):
-        st.markdown("<h2 style='text-align: center;'>👋 Selamat Datang</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Masukkan nama panggilanmu untuk mulai belajar.</p>", unsafe_allow_html=True)
+        # Hapus karakter aneh agar suara bersih
+        clean_text = text.replace("*", "").replace("#", "").replace("-", " ")
         
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            nama_input = st.text_input("Nama Kamu:", placeholder="Contoh: Budi", label_visibility="collapsed")
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Mulai Belajar 🚀", use_container_width=True, type="primary"):
-                if nama_input.strip():
-                    st.session_state.user_name = nama_input.strip()
-                    st.rerun()
+        tts = gTTS(text=clean_text, lang='id', slow=False)
+        mp3_fp = BytesIO()
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0)
+        
+        audio_base64 = base64.b64encode(mp3_fp.read()).decode('utf-8')
+        audio_html = f"""
+            <audio controls autoplay style="width: 100%;">
+            <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+            </audio>
+            """
+        st.markdown(audio_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.caption("🔇 (Suara sedang istirahat)")
+
+# --- 3. SETUP KONEKSI (DIPERBAIKI DENGAN AUTO-PILOT) ---
+@st.cache_resource
+def setup_connection():
+    api_key = None
+    # Cek File Lokal
+    if os.path.exists("apikey.txt"):
+        with open("apikey.txt", "r") as f:
+            api_key = f.read().strip()
+    # Cek Secrets (Online)
+    elif "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    
+    if not api_key:
+        return None, None
+
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        # --- LOGIKA AUTO-DETEKSI (KEMBALI DIADAKAN) ---
+        # Mencari model yang PASTI ada di akun Bapak
+        all_models = list(client.models.list())
+        chosen_model = ""
+        
+        # Cari yang mengandung 'flash' (cepat)
+        for m in all_models:
+            if "gemini" in m.name and "flash" in m.name and "exp" not in m.name:
+                chosen_model = m.name.replace("models/", "")
+                break
+        
+        # Jika tidak ketemu, ambil sembarang gemini
+        if not chosen_model:
+            for m in all_models:
+                if "gemini" in m.name:
+                    chosen_model = m.name.replace("models/", "")
+                    break
+                    
+        return client, chosen_model
+        
+    except Exception as e:
+        return None, None
+
+# --- 4. LOGIN ---
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+
+if st.session_state.user_name is None:
+    st.title("🧩 Math Relax AI")
+    st.write("Belajar Pecahan Kelas 6 SD")
+    with st.form("login_form"):
+        input_nama = st.text_input("Halo! Siapa namamu?", placeholder="Tulis nama di sini...")
+        submit_btn = st.form_submit_button("Masuk Kelas 🚀")
+        if submit_btn and input_nama:
+            st.session_state.user_name = input_nama
+            st.rerun()
     st.stop()
 
-# --- 6. TAMPILAN CHAT UTAMA ---
-with st.container(border=True):
-    st.title("🧘 Math Relax AI")
-    st.caption(f"Siswa: {st.session_state.user_name} | Materi: Pecahan SD Fase C")
-    st.divider()
+# --- 5. TAMPILAN UTAMA ---
+client, model_name = setup_connection()
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        sapaan = f"Halo **{st.session_state.user_name}**! 👋\n\nAku teman belajarmu. Jangan takut salah ya, di sini kita belajar Pecahan dengan santai. Kamu lagi bingung soal apa nih?"
-        st.session_state.messages.append({"role": "model", "content": sapaan})
+if not client or not model_name:
+    st.error("❌ Koneksi Gagal. Cek API Key atau Internet.")
+    st.stop()
 
-    chat_container = st.container()
-    with chat_container:
-        for msg in st.session_state.messages:
-            ikon = "🧑‍🎓" if msg["role"] == "user" else "🧘"
-            with st.chat_message(msg["role"], avatar=ikon):
-                st.markdown(msg["content"])
-        st.markdown("<div id='link_scroll'></div>", unsafe_allow_html=True)
+st.markdown(f"### Hai, {st.session_state.user_name}! 👋")
+st.caption("Teman Belajar Pecahan yang Sabar & Santai")
+st.divider()
 
-    # --- 7. INPUT PESAN & PROSES AI ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    if prompt := st.chat_input("Ketik soal atau curhatmu di sini..."):
-        # Tampilkan Pesan Siswa
-        with chat_container:
-            with st.chat_message("user", avatar="🧑‍🎓"):
-                st.markdown(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        simpan_log(st.session_state.user_name, "Siswa", prompt)
+# --- 6. INSTRUKSI GURU (MODE SCAFFOLDING) ---
+SYSTEM_INSTRUCTION = f"""
+PERAN:
+Kamu adalah "Kak Gemmy", tutor matematika pribadi untuk siswa SD Kelas 6.
+Siswa: {st.session_state.user_name}.
+Topik: Pecahan (Fractions).
 
-        # Proses Jawaban AI
-        with chat_container:
-            with st.chat_message("model", avatar="🧘"):
-                if model:
-                    placeholder = st.empty()
-                    try:
-                        # --- BAGIAN GUARDRAILS (PEMBATASAN TOPIK) ---
-                        instruksi_guru = f"""
-                        Berperanlah sebagai Guru SD yang ramah, sabar, dan empatik.
-                        Nama siswa: {st.session_state.user_name}.
-                        Materi: PECAHAN (Matematika SD Fase C).
-                        Metode: Scaffolding (berikan petunjuk bertahap, JANGAN berikan jawaban langsung).
-                        
-                        ATURAN PENTING:
-                        1. Panggil siswa dengan namanya sesekali agar akrab.
-                        2. Jika siswa bertanya soal matematika/pecahan, bimbing dia pelan-pelan.
-                        3. JIKA SISWA BERTANYA DI LUAR TOPIK MATEMATIKA (misal: game, film, hobi, curhat tidak jelas), 
-                           TOLAK DENGAN HALUS dan ajak kembali belajar matematika.
-                           Contoh tolak halus: "Wah seru tuh, tapi kita fokus selesaikan soal pecahan ini dulu yuk, {st.session_state.user_name}!"
-                        """
-                        
-                        chat_session = model.start_chat(history=[
-                            {"role": "user", "parts": [instruksi_guru]},
-                            {"role": "model", "parts": ["Siap, saya mengerti peran saya sebagai Guru Matematika yang empatik."]}
-                        ])
-                        
-                        # Masukkan history chat sebelumnya (context window)
-                        for m in st.session_state.messages:
-                            if m["role"] != "system":
-                                role_google = "user" if m["role"] == "user" else "model"
-                                try:
-                                    chat_session.history.append({"role": role_google, "parts": [m["content"]]})
-                                except:
-                                    pass
+ATURAN WAJIB (STRICT RULES):
+1.  **DILARANG MEMBERIKAN JAWABAN AKHIR SECARA LANGSUNG.**
+2.  Gunakan metode "Scaffolding" (Bertingkat). Bimbing siswa langkah demi langkah.
+3.  Jika siswa bertanya soal (misal: "1/2 + 1/3 berapa?"), JAWABLAH dengan pertanyaan pancingan: "Oke, yuk kita lihat penyebutnya (angka bawah). Angka 2 dan 3 sudah sama belum ya?"
+4.  Gunakan bahasa percakapan yang sangat santai.
+5.  Sebutkan angka pecahan dengan huruf (contoh: tulis "satu per dua" jangan hanya "1/2") agar suara robot lancar.
 
-                        # Kirim Pesan
-                        response = chat_session.send_message(prompt)
-                        jawaban_ai = response.text
-                        
-                        placeholder.markdown(jawaban_ai)
-                        st.session_state.messages.append({"role": "model", "content": jawaban_ai})
-                        simpan_log(st.session_state.user_name, "AI", jawaban_ai)
-                        
-                    except Exception as e:
-                        st.error(f"Maaf, koneksi terputus. Coba lagi ya. ({e})")
-                else:
-                    st.error("Sistem AI belum siap. Cek konfigurasi Secrets.")
+TUJUAN:
+Menurunkan kecemasan siswa.
+"""
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    sapaan = f"Halo {st.session_state.user_name}! Kak Gemmy siap bantu. Ada soal pecahan yang bikin kamu bingung?"
+    st.session_state.messages.append({"role": "assistant", "content": sapaan})
+
+# Tampilkan Chat
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# --- 7. INPUT & RESPON ---
+if prompt := st.chat_input("Tanya Kak Gemmy di sini..."):
+    
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        message_box = st.empty()
+        full_response = ""
+        try:
+            chat_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages])
+            full_prompt = f"{SYSTEM_INSTRUCTION}\n\nRiwayat:\n{chat_history}\n\nSiswa: {prompt}\nKak Gemmy:"
+            
+            # Gunakan model_name hasil auto-deteksi (bukan hardcode)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=full_prompt
+            )
+            full_response = response.text
+            
+            message_box.markdown(full_response)
+            
+            # Autoplay Suara
+            with st.spinner("Kak Gemmy sedang bicara..."):
+                text_to_speech_autoplay(full_response)
+            
+        except Exception as e:
+            full_response = "Yah, sinyalnya putus. Coba tanya lagi ya!"
+            st.error(f"Error detail: {e}") # Tampilkan error asli biar jelas
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
